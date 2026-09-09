@@ -1,0 +1,71 @@
+{
+  "name": "magnifier-translator",
+  "productName": "放大镜翻译器",
+  "version": "1.3.3",
+  "description": "macOS 屏幕取词翻译工具：框选 → OCR → AI 翻译",
+  "main": "main.js",
+  "author": "Lee",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:ocr": "swiftc -O -framework Vision -framework AppKit native/ocr.swift -o build/vision-ocr",
+    "dist": "npm run build:ocr && electron-builder --mac --arm64"
+  },
+  "dependencies": {
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.lee.magnifiertranslator",
+    "productName": "放大镜翻译器",
+    "icon": "assets/icon.icns",
+    "afterSign": "build/adhoc-sign.js",
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "main.js",
+      "preload.js",
+      "ball.html",
+      "panel.html",
+      "lens.html",
+      "index.html",
+      "overlay.html",
+      "src/**",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/vision-ocr",
+        "to": "bin/vision-ocr"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ],
+      "identity": null,
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "放大镜翻译器",
+      "contents": [
+        {
+          "x": 140,
+          "y": 220
+        },
+        {
+          "x": 420,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

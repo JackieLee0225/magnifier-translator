@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>放大镜镜片</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;     /* 窗口透明，四角露出真实屏幕 */
+        }
+
+        /* 镜片画布：正好 150x150，偏移 14px 给发光环留白 */
+        #lens {
+            position: absolute;
+            left: 14px;
+            top: 14px;
+            width: 150px;
+            height: 150px;
+        }
+
+        /* 蓝色半透明发光环（用 box-shadow 做发光，不挡画布内容） */
+        #ring {
+            position: absolute;
+            left: 14px;
+            top: 14px;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.9),
+                        0 0 14px 3px rgba(10, 132, 255, 0.55);
+        }
+        /* 进入模式 / 完成识别 / 出错的边缘闪烁 */
+        #ring.blink-enter { animation: blinkBlue 0.55s ease 2; }
+        #ring.blink-done  { animation: blinkGreen 0.55s ease 2; }
+        #ring.blink-error { animation: blinkRed 0.55s ease 2; }
+        @keyframes blinkBlue {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(10,132,255,0.9), 0 0 14px 3px rgba(10,132,255,0.55); }
+            50%      { box-shadow: 0 0 0 3px rgba(10,132,255,1),   0 0 24px 9px rgba(10,132,255,0.95); }
+        }
+        @keyframes blinkGreen {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(48,209,88,0.9), 0 0 14px 3px rgba(48,209,88,0.55); }
+            50%      { box-shadow: 0 0 0 3px rgba(48,209,88,1),   0 0 24px 9px rgba(48,209,88,0.95); }
+        }
+        @keyframes blinkRed {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(255,59,48,0.9), 0 0 14px 3px rgba(255,59,48,0.55); }
+            50%      { box-shadow: 0 0 0 3px rgba(255,59,48,1),   0 0 24px 9px rgba(255,59,48,0.95); }
+        }
+
+        /* 识别中提示 */
+        #hint {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            pointer-events: none;
+            display: none;
+            filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+        }
+
+        /* 失败提示：出错时在镜片中央显示可读的原因，
+           而不是只闪一下红光让用户完全猜不到发生了什么 */
+        #msg {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            text-align: center;
+            font: 600 12px/1.35 -apple-system, "PingFang SC", sans-serif;
+            color: #fff;
+            background: rgba(200, 40, 40, 0.86);
+            border-radius: 8px;
+            padding: 6px 8px;
+            pointer-events: none;
+            display: none;
+        }
+
+    </style>
+</head>
+<body>
+    <canvas id="lens"></canvas>
+    <div id="ring"></div>
+    <div id="hint">🔍</div>
+    <div id="msg"></div>
+
+    <script>
+        // 镜片逻辑全部在前端渲染进程里：主进程只负责截图 / OCR / 翻译，
+        // 通过 preload 暴露的 window.api 把「截图图」和「坐标框+译文」推过来。
+
+        let LENS_D = 150;
+        const dpr = window.devicePixelRatio || 1;
+
+        const canvas = document.getElementById('lens');
+        const ring = document.getElementById('ring');
+        const hint = document.getElementById('hint');
+        const msg = document.getElementById('msg'); // 失败原因提示层
+
+        // 画布后备分辨率按 dpr 放大，保证 Retina 下文字清晰
+        canvas.width = LENS_D * dpr;
+        canvas.height = LENS_D * dpr;
+        const ctx = canvas.getContext('2d');
+
+        // 离屏画布：用来读取截图像素、推断每块文字的背景色（决定覆盖色与文字颜色）
+        const off = document.createElement('canvas');
+        const octx = off.getContext('2d', { willReadFrequently: true });
+
+        // 当前帧状态
+        let currentImage = null;       // 已加载的 HTMLImageElement
+        let currentBlocks = [];        // OCR 坐标框（图片像素坐标，左上原点）
+        let currentTranslated = '';    // 译文（可能多行）
+        let recognizing = false;       // 是否正在识别（显示 🔍）
+
+        function fontOf(size) {
+            return `600 ${size}px -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif`;
+        }
+
+        // 圆角矩形填充（带兜底，老内核没有 roundRect 也能用）
+        function roundRectPath(c, x, y, w, h, r) {
+            r = Math.min(r, w / 2, h / 2);
+            c.beginPath();
+            if (c.roundRect) {
+                c.roundRect(x, y, w, h, r);
+            } else {
+                c.moveTo(x + r, y);
+                c.arcTo(x + w, y, x + w, y + h, r);
+                c.arcTo(x + w, y + h, x, y + h, r);
+                c.arcTo(x, y + h, x, y, r);
+                c.arcTo(x, y, x + w, y, r);
+                c.closePath();
+            }
+        }
+
+        // 取某个矩形区域内的平均背景色（坐标用图片自然像素）
+        function sampleAvg(bbox, iw, ih) {
+            const x = Math.max(0, Math.floor(bbox.x));
+            const y = Math.max(0, Math.floor(bbox.y));
+            const w = Math.min(iw - x, Math.ceil(bbox.width));
+            const h = Math.min(ih - y, Math.ceil(bbox.height));
+            if (w <= 0 || h <= 0) return { r: 255, g: 255, b: 255 };
+            const data = octx.getImageData(x, y, w, h).data;
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+            }
+            if (!n) return { r: 255, g: 255, b: 255 };
+            return { r: r / n, g: g / n, b: b / n };
+        }
+
+        // 在缩放后的矩形里绘制若干行译文（逐行收缩到宽度、整体垂直居中）
+        function drawTextLines(lines, rect, color) {
+            if (!lines.length) return;
+            let size = rect.height * 0.95; // 译文字号基准 ≈ 原文高度（用户要求「和原文一样大」）
+            const lineH = () => size * 1.18;
+            // 先按宽度收缩
+            while (size > 7) {
+                ctx.font = fontOf(size);
+                if (lines.every((l) => ctx.measureText(l).width <= rect.width * 1.05)) break;
+                size -= 1;
+            }
+            // 再按总高度收缩，避免堆出矩形
+            while (size > 7 && lines.length * lineH() > rect.height * 1.05) size -= 1;
+
+            ctx.font = fontOf(size);
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const totalH = lines.length * lineH();
+            let y = rect.y + rect.height / 2 - totalH / 2 + lineH() / 2;
+            for (const l of lines) {
+                ctx.fillText(l, rect.x + rect.width / 2, y);
+                y += lineH();
+            }
+        }
+
+        // 覆盖原文字 + 画译文。
+        // rect：画布像素坐标（用于绘制）；imgBbox：图片像素坐标（用于取背景色）
+        function coverAndDraw(rect, imgBbox, text, iw, ih) {
+            // 用原文字区域的平均色当「覆盖色」，视觉上最接近原背景
+            const bg = sampleAvg(imgBbox, iw, ih);
+            const lum = (bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114) / 255;
+            const coverColor = `rgba(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)},0.92)`;
+            const textColor = lum < 0.5 ? '#ffffff' : '#111111';
+
+            // 覆盖原文字（略放大一圈，盖得更干净）
+            const pad = Math.max(2, rect.height * 0.06);
+            ctx.fillStyle = coverColor;
+            roundRectPath(ctx, rect.x - pad, rect.y - pad, rect.width + pad * 2, rect.height + pad * 2, rect.height * 0.25);
+            ctx.fill();
+
+            drawTextLines([text], rect, textColor);
+        }
+
+        // 把图片像素坐标框缩放成画布像素坐标框
+        function scaleRect(bbox, scale) {
+            return {
+                x: bbox.x * scale,
+                y: bbox.y * scale,
+                width: bbox.width * scale,
+                height: bbox.height * scale
+            };
+        }
+
+        // 多行文字框的并集（图片像素坐标）
+        function unionRect(blocks) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const b of blocks) {
+                minX = Math.min(minX, b.bbox.x);
+                minY = Math.min(minY, b.bbox.y);
+                maxX = Math.max(maxX, b.bbox.x + b.bbox.width);
+                maxY = Math.max(maxY, b.bbox.y + b.bbox.height);
+            }
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        }
+
+        // 【兜底】永远在镜片中央画一张高对比译文卡：保证用户一定能看到翻译结果，
+        // 不依赖 OCR 坐标框是否对齐——坐标框偶发错位时，精确覆盖可能被画到圈外或被裁掉，
+        // 这一张卡直接用画布尺寸定位，免疫坐标问题。
+        function drawCenteredCard(lines, W, H) {
+            if (!lines.length) return;
+            const maxW = W * 0.84;
+            let size = Math.min(44, W * 0.30); // 兜底卡译文字号（用户要求「再大一倍」）
+            while (size > 10) {
+                ctx.font = fontOf(size);
+                if (Math.max.apply(null, lines.map((l) => ctx.measureText(l).width)) <= maxW) break;
+                size -= 1;
+            }
+            const lineH = size * 1.25;
+            const padX = 10, padY = 7;
+            const cardW = Math.min(maxW + padX * 2, W - 4);
+            const cardH = lines.length * lineH + padY * 2;
+            const cx = W / 2, cy = H / 2;
+            const x = Math.round(cx - cardW / 2);
+            const y = Math.round(cy - cardH / 2);
+
+            ctx.fillStyle = 'rgba(18,20,26,0.82)';
+            roundRectPath(ctx, x, y, cardW, cardH, 10);
+            ctx.fill();
+
+            ctx.font = fontOf(size);
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let ty = y + padY + lineH / 2;
+            for (const l of lines) {
+                ctx.fillText(l, cx, ty);
+                ty += lineH;
+            }
+        }
+
+        // 按主进程下发的尺寸铺满画布：镜片直径 d（逻辑点）+ 留白 margin。
+        // 这样镜片大小可调后，渲染层始终贴满实际窗口，译文也按新尺寸对齐。
+        function applyConfig(cfg) {
+            LENS_D = cfg.d;
+            const m = cfg.margin;
+            canvas.style.left = ring.style.left = m + 'px';
+            canvas.style.top = ring.style.top = m + 'px';
+            canvas.style.width = ring.style.width = LENS_D + 'px';
+            canvas.style.height = ring.style.height = LENS_D + 'px';
+            canvas.width = LENS_D * dpr;
+            canvas.height = LENS_D * dpr;
+            redraw();
+        }
+
+        // 重绘整帧
+        function redraw() {
+            const W = canvas.width;
+            const H = canvas.height;
+            ctx.clearRect(0, 0, W, H);
+
+            const cx = W / 2, cy = H / 2, r = W / 2;
+
+            ctx.save();
+            // 圆形裁剪：只画镜片内的内容，四角透明 → 露出真实屏幕
+            ctx.beginPath();
+            ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
+            ctx.clip();
+
+            if (currentImage) {
+                // 截图就是镜片区域，1:1 铺满（截图已含 dpr，画布也按 dpr，比例一致）
+                ctx.drawImage(currentImage, 0, 0, W, H);
+
+                if (currentTranslated) {
+                    const lines = currentTranslated
+                        .split('\n').map((s) => s.trim()).filter(Boolean);
+
+                    if (currentBlocks.length && currentImage) {
+                        // 【精确模式·主路径】有坐标框时，把每行译文按原始位置覆盖在原文上
+                        // （用户要求：按原句位置分别覆盖）。坐标框缺失时才退到居中卡。
+                        const iw = currentImage.naturalWidth || W;
+                        const ih = currentImage.naturalHeight || H;
+                        const scale = iw ? W / iw : 1; // 图片像素 → 画布像素（防 0 除）
+
+                        off.width = iw; off.height = ih;
+                        octx.drawImage(currentImage, 0, 0);
+
+                        if (lines.length === currentBlocks.length) {
+                            // 行数对得上：逐行覆盖 + 逐行译文
+                            currentBlocks.forEach((b, i) => {
+                                const rect = scaleRect(b.bbox, scale);
+                                coverAndDraw(rect, b.bbox, lines[i], iw, ih);
+                            });
+                        } else {
+                            // 行数不齐：整体覆盖 + 居中铺译文
+                            const overall = unionRect(currentBlocks);
+                            coverAndDrawBlockImgPx(overall, currentTranslated, iw, ih, scale);
+                        }
+                    } else {
+                        // 【兜底】没有坐标框时（极少）才用居中卡，保证不空屏
+                        drawCenteredCard(lines, W, H);
+                    }
+                }
+            } else {
+                // 还没图：给极淡底，避免全黑
+                ctx.fillStyle = 'rgba(255,255,255,0.04)';
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            ctx.restore();
+
+            // 识别中显示 🔍
+            hint.style.display = recognizing ? 'block' : 'none';
+        }
+
+        // 行数不齐时：rect 用图片像素坐标取背景色，再换算成画布坐标绘制
+        function coverAndDrawBlockImgPx(overallImgPx, translated, iw, ih, scale) {
+            const bg = sampleAvg(overallImgPx, iw, ih);
+            const lum = (bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114) / 255;
+            const coverColor = `rgba(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)},0.92)`;
+            const textColor = lum < 0.5 ? '#ffffff' : '#111111';
+
+            const rect = scaleRect(overallImgPx, scale);
+            const pad = Math.max(3, rect.height * 0.04);
+            ctx.fillStyle = coverColor;
+            roundRectPath(ctx, rect.x - pad, rect.y - pad,
+                rect.width + pad * 2, rect.height + pad * 2, rect.height * 0.12);
+            ctx.fill();
+
+            const lines = translated.split('\n').map((s) => s.trim()).filter(Boolean);
+            drawTextLines(lines.length ? lines : [translated], rect, textColor);
+        }
+
+        // 边缘闪烁（进入 / 完成 / 出错）
+        function blink(cls) {
+            ring.classList.remove('blink-enter', 'blink-done', 'blink-error');
+            void ring.offsetWidth; // 触发重排，让动画能重新播放
+            ring.classList.add(cls);
+            setTimeout(() => ring.classList.remove(cls), 1300);
+        }
+
+        // ---------------- 与主进程的通道 ----------------
+
+        // 主进程下发的镜片尺寸配置（直径 / 留白）
+        window.api.onLensConfig((cfg) => { applyConfig(cfg); });
+
+        // 每一帧截图（dataURL）
+        window.api.onLensFrame(({ image }) => {
+            const img = new Image();
+            img.onload = () => { currentImage = img; redraw(); };
+            img.src = image;
+        });
+
+        // OCR + 翻译结果
+        window.api.onLensOcr(({ blocks, translated, status }) => {
+            currentBlocks = blocks || [];
+            currentTranslated = translated || '';
+            console.log(
+                `[lens-renderer] ocr status=${status} blocks=${currentBlocks.length} trLen=${currentTranslated.length} img=${currentImage ? currentImage.naturalWidth : 0}`
+            );
+            msg.style.display = 'none';  // 拿到结果就撤掉之前的失败提示
+            if (status === 'done') {
+                recognizing = false;     // 识别结束，收起 🔍
+                blink('blink-done');
+            }
+            if (status === 'idle') recognizing = false;
+            redraw();
+        });
+
+        // 状态事件
+        window.api.onLensStatus((s) => {
+            // 兼容两种形态：旧的纯字符串，和新的 { type, text }
+            const type = typeof s === 'string' ? s : (s && s.type);
+            const text = typeof s === 'object' && s ? s.text : '';
+
+            if (type === 'enter') {
+                blink('blink-enter');
+                msg.style.display = 'none';
+            } else if (type === 'recognizing') {
+                recognizing = true;
+                msg.style.display = 'none';
+            } else if (type === 'idle') {
+                recognizing = false;
+            } else if (type === 'error') {
+                // 出错时收起 🔍，闪红光提示；若已有译文则不遮挡，避免盖掉正在看的结果
+                recognizing = false;
+                blink('blink-error');
+                msg.textContent = text || '识别失败';
+                msg.style.display = currentTranslated ? 'none' : 'block';
+            }
+            redraw();
+        });
+
+        // 告诉主进程：镜片渲染进程已就绪，可以开循环了
+        window.api.lensReady();
+    </script>
+</body>
+</html>

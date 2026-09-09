@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>设置</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --accent: #0a84ff;
+            --text: #1d1d1f;
+            --sub: #6b6b70;
+        }
+        html, body {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: var(--text);
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            background: #f5f5f7;
+        }
+        .panel { height: 100%; display: flex; flex-direction: column; }
+        .head {
+            height: 44px; display: flex; align-items: center; padding: 0 12px; gap: 8px;
+            border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.65);
+        }
+        .head .title { font-size: 14px; font-weight: 600; flex: 1; }
+        .icon-btn {
+            width: 28px; height: 28px; border: none; border-radius: 7px;
+            background: rgba(255, 255, 255, 0.5); color: var(--sub);
+            cursor: pointer; font-size: 15px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .icon-btn:hover { background: rgba(0, 0, 0, 0.08); color: var(--text); }
+
+        .body { padding: 14px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; }
+
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: var(--sub); }
+        .field input[type=password], .field select {
+            padding: 9px 10px; border-radius: 9px;
+            border: 0.5px solid rgba(0, 0, 0, 0.15); background: #fff;
+            font-size: 13px; color: var(--text); outline: none;
+        }
+        .field input:focus, .field select:focus { border-color: var(--accent); }
+
+        .row { display: flex; gap: 8px; align-items: center; }
+        .toggle-row { justify-content: space-between; }
+
+        .hint { font-size: 11px; color: var(--sub); line-height: 1.5; }
+        hr { border: none; border-top: 0.5px solid rgba(0, 0, 0, 0.1); margin: 2px 0; }
+
+        /* 开关 */
+        .switch { position: relative; width: 44px; height: 26px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-sw {
+            position: absolute; inset: 0; background: #c7c7cc; border-radius: 13px;
+            transition: .2s; cursor: pointer;
+        }
+        .slider-sw:before {
+            content: ""; position: absolute; width: 22px; height: 22px; left: 2px; top: 2px;
+            background: #fff; border-radius: 50%; transition: .2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        .switch input:checked + .slider-sw { background: var(--accent); }
+        .switch input:checked + .slider-sw:before { transform: translateX(18px); }
+
+        input[type=range] { width: 100%; accent-color: var(--accent); }
+
+        /* 镜片大小三等分刻度 */
+        .slider-wrap { position: relative; padding: 2px 4px 0; }
+        .scale { position: relative; height: 10px; margin-top: 3px; }
+        .scale .tick {
+            position: absolute; top: 0; width: 2px; height: 10px;
+            background: rgba(0, 0, 0, 0.38); transform: translateX(-50%);
+            border-radius: 1px;
+        }
+        .scale .tick.s1 { left: 33.33%; }
+        .scale .tick.s2 { left: 66.66%; }
+        .scale-labels {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center;
+            font-size: 10px; color: var(--sub); margin-top: 1px;
+        }
+        .mode-chip {
+            display: inline-block; margin-top: 6px; padding: 2px 9px;
+            border-radius: 8px; font-size: 11px; font-weight: 600;
+            background: rgba(10, 132, 255, 0.12); color: var(--accent);
+        }
+        .mode-chip.word { background: rgba(255, 149, 0, 0.14); color: #c97700; }
+
+        .btn-primary {
+            flex: 1; padding: 9px; border: none; border-radius: 10px;
+            background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
+        }
+        .btn-primary:hover { filter: brightness(1.08); }
+        #testBtn {
+            flex: 1; padding: 9px; border-radius: 10px;
+            border: 0.5px solid rgba(0, 0, 0, 0.15); background: #fff; font-size: 14px; cursor: pointer;
+        }
+        #testBtn:disabled { opacity: 0.5; cursor: default; }
+
+        .test-result {
+            font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 9px;
+            background: rgba(0, 0, 0, 0.04); color: var(--sub); display: none;
+        }
+        .test-result:not(:empty) { display: block; }
+        .test-result.ok { background: rgba(52, 199, 89, 0.12); color: #1a7f37; }
+        .test-result.err { background: rgba(255, 59, 48, 0.10); color: #c0341d; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <div class="head">
+            <span class="title">🔍 放大镜翻译器</span>
+            <button class="icon-btn" id="closeBtn" title="关闭">✕</button>
+        </div>
+
+        <div class="body">
+            <div class="row toggle-row">
+                <label style="font-size:14px;color:var(--text);font-weight:500;">放大镜翻译</label>
+                <label class="switch">
+                    <input type="checkbox" id="magToggle">
+                    <span class="slider-sw"></span>
+                </label>
+            </div>
+
+            <div class="field">
+                <label>镜片大小 <span id="lensVal">150</span> px</label>
+                <div class="slider-wrap">
+                    <input type="range" id="lens" min="90" max="320" step="10" value="150">
+                    <div class="scale">
+                        <span class="tick s1"></span>
+                        <span class="tick s2"></span>
+                    </div>
+                    <div class="scale-labels">
+                        <span>单词</span><span>句子</span><span>句子</span>
+                    </div>
+                </div>
+                <span id="modeChip" class="mode-chip word">当前：逐词翻译</span>
+                <span class="hint">左 1/3 区间逐词翻译，其余区间整句翻译。镜片大小即识别区域大小。</span>
+            </div>
+
+            <hr>
+
+            <div class="field">
+                <label>DeepSeek API Key</label>
+                <input type="password" id="apiKey" placeholder="sk-... 留空则用免费接口" autocomplete="off">
+                <span class="hint">Key 用系统级加密存本地，不明文落盘。可到 platform.deepseek.com 申请。</span>
+            </div>
+            <div class="field">
+                <label>翻译方向</label>
+                <select id="direction">
+                    <option value="auto">自动判断</option>
+                    <option value="zh2en">中 → 英</option>
+                    <option value="en2zh">英 → 中</option>
+                </select>
+            </div>
+            <div class="row">
+                <button id="testBtn">测试</button>
+                <button class="btn-primary" id="saveBtn">保存</button>
+            </div>
+            <div class="test-result" id="testResult"></div>
+            <div class="hint" id="hint"></div>
+        </div>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const magToggle = $('magToggle');
+        const lens = $('lens');
+        const lensVal = $('lensVal');
+        const modeChip = $('modeChip');
+        const apiKey = $('apiKey');
+        const direction = $('direction');
+        const hint = $('hint');
+        const testResult = $('testResult');
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        async function refresh() {
+            const s = await window.api.getSettings();
+            direction.value = s.direction || 'auto';
+            hint.textContent = s.hasKey ? '已配置 API Key' : '未配置 Key，将使用免费接口';
+            testResult.textContent = '';
+            testResult.className = 'test-result';
+        }
+
+        // 根据镜片直径判断当前是「逐词」还是「整句」（与 main.js 的 1/3 阈值一致）
+        function updateModeChip(diameter) {
+            const min = Number(lens.min), max = Number(lens.max);
+            const wm = Number(diameter) <= min + (max - min) / 3;
+            modeChip.textContent = wm ? '当前：逐词翻译（≤1/3）' : '当前：整句翻译（>1/3）';
+            modeChip.className = 'mode-chip' + (wm ? ' word' : '');
+        }
+
+        // 主进程推送的当前状态（开关 / 镜片大小 / 翻译粒度）
+        window.api.onPanelState((st) => {
+            magToggle.checked = !!(st && st.magnifierOn);
+            lens.value = (st && st.lensDiameter) || 150;
+            lensVal.textContent = lens.value;
+            updateModeChip(lens.value);
+            refresh();
+        });
+
+        // 打开面板时主动拉一次最新状态（兜底，防止漏收推送）
+        window.api.panelRequestState();
+
+        $('closeBtn').addEventListener('click', () => window.api.hidePanel());
+
+        magToggle.addEventListener('change', () => window.api.setMagnifier(magToggle.checked));
+
+        lens.addEventListener('input', () => { lensVal.textContent = lens.value; updateModeChip(lens.value); });
+        lens.addEventListener('change', () => window.api.setLensSize(Number(lens.value)));
+
+        $('saveBtn').addEventListener('click', async () => {
+            const key = apiKey.value.trim();
+            const patch = { direction: direction.value, lensDiameter: Number(lens.value) };
+            if (key) patch.apiKey = key;
+            await window.api.saveSettings(patch);
+            hint.textContent = '已保存 ✓';
+            setTimeout(() => window.api.hidePanel(), 500);
+        });
+
+        $('testBtn').addEventListener('click', async () => {
+            const key = apiKey.value.trim();
+            const btn = $('testBtn');
+            btn.disabled = true;
+            testResult.className = 'test-result';
+            testResult.textContent = '测试中…';
+            try {
+                const res = await window.api.testTranslate({ apiKey: key, direction: direction.value });
+                if (res && res.ok) {
+                    testResult.className = 'test-result ok';
+                    const from = res.direction && res.direction.from === 'zh' ? '中'
+                        : (res.direction && res.direction.from === 'ja' ? '日' : '英');
+                    const to = res.direction && res.direction.to === 'zh' ? '中' : '英';
+                    const prov = res.provider === 'deepseek' ? 'DeepSeek' : '免费接口';
+                    testResult.innerHTML = '✓ ' + from + '→' + to + '（' + prov + '）<br>「' + esc(res.translated) + '」';
+                } else {
+                    testResult.className = 'test-result err';
+                    testResult.textContent = '✗ 测试失败：' + ((res && res.error) || '未知错误');
+                }
+            } catch (e) {
+                testResult.className = 'test-result err';
+                testResult.textContent = '✗ 测试失败：' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

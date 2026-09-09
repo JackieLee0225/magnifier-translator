@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            cursor: crosshair;
+            user-select: none;
+            /* 极淡的一层灰，让用户看得出已经进入框选模式。
+               覆盖层会在截图前隐藏，不会影响截图内容。 */
+            background: rgba(0, 0, 0, 0.18);
+        }
+        /* 选区内部要「挖空」，让用户看清自己框的是什么。
+           做法：用超大 box-shadow 把选区以外的部分压暗，选区本身保持透明。 */
+        #selection-box {
+            position: absolute;
+            border: 1.5px solid rgba(10, 132, 255, 0.95);
+            background: transparent;
+            box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.18);
+            display: none;
+            pointer-events: none;
+        }
+        #size-label {
+            position: absolute;
+            display: none;
+            padding: 3px 8px;
+            border-radius: 5px;
+            background: rgba(10, 132, 255, 0.95);
+            color: #fff;
+            font-family: -apple-system, sans-serif;
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        #tip {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.62);
+            padding: 9px 22px;
+            border-radius: 8px;
+            font-family: -apple-system, sans-serif;
+            font-size: 13px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="selection-box"></div>
+    <div id="size-label"></div>
+    <div id="tip">按住鼠标拖拽框选文字区域 · ESC 取消</div>
+
+    <script>
+        // 主进程通过 query 传进来的「本显示器原点」偏移。
+        // 窗口内坐标 + 这个偏移 = 全局屏幕坐标，多显示器就是靠这个对齐的。
+        const params = new URLSearchParams(location.search);
+        const originX = Number(params.get('dx') || 0);
+        const originY = Number(params.get('dy') || 0);
+
+        const box = document.getElementById('selection-box');
+        const label = document.getElementById('size-label');
+        const tip = document.getElementById('tip');
+
+        let selecting = false;
+        let startX = 0;
+        let startY = 0;
+        let done = false;   // 防止一次框选触发多次回传
+
+        /** 根据当前鼠标位置计算选区（窗口内坐标） */
+        function calcRect(e) {
+            return {
+                x: Math.min(startX, e.clientX),
+                y: Math.min(startY, e.clientY),
+                width: Math.abs(e.clientX - startX),
+                height: Math.abs(e.clientY - startY)
+            };
+        }
+
+        function paint(r) {
+            box.style.left = r.x + 'px';
+            box.style.top = r.y + 'px';
+            box.style.width = r.width + 'px';
+            box.style.height = r.height + 'px';
+
+            label.textContent = Math.round(r.width) + ' × ' + Math.round(r.height);
+            // 尺寸标签默认放在选区上方，贴顶时改放到下方
+            const labelTop = r.y > 26 ? r.y - 24 : r.y + r.height + 6;
+            label.style.left = r.x + 'px';
+            label.style.top = labelTop + 'px';
+        }
+
+        document.addEventListener('mousedown', (e) => {
+            if (done) return;
+            selecting = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            box.style.display = 'block';
+            label.style.display = 'block';
+            tip.style.display = 'none';
+            paint({ x: startX, y: startY, width: 0, height: 0 });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!selecting) return;
+            paint(calcRect(e));
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!selecting || done) return;
+            selecting = false;
+
+            const r = calcRect(e);
+
+            // 选区太小视为误触，直接取消
+            if (r.width < 12 || r.height < 12) {
+                done = true;
+                box.style.display = 'none';
+                label.style.display = 'none';
+                window.api.cancelSelection();
+                return;
+            }
+
+            done = true;
+            box.style.display = 'none';
+            label.style.display = 'none';
+
+            // 窗口内坐标 → 全局屏幕坐标
+            window.api.finishSelection({
+                x: r.x + originX,
+                y: r.y + originY,
+                width: r.width,
+                height: r.height
+            });
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !done) {
+                done = true;
+                selecting = false;
+                box.style.display = 'none';
+                label.style.display = 'none';
+                window.api.cancelSelection();
+            }
+        });
+    </script>
+</body>
+</html>

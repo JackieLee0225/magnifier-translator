@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+        html, body {
+            margin: 0; padding: 0;
+            width: 60px; height: 60px;
+            overflow: hidden;
+            background: transparent;
+        }
+        #orb {
+            width: 52px; height: 52px;
+            margin: 4px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; line-height: 1;
+            color: #fff;
+            background: radial-gradient(circle at 32% 28%, #6db4ff, #0a84ff 72%);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+            cursor: grab;
+            user-select: none;
+            -webkit-app-region: no-drag;
+            transition: box-shadow .2s, transform .08s;
+        }
+        #orb:active { cursor: grabbing; transform: scale(0.96); }
+        /* 放大镜开启时：变绿 + 呼吸光环 */
+        #orb.active {
+            background: radial-gradient(circle at 32% 28%, #9af0b4, #1aa260 72%);
+            box-shadow: 0 0 0 3px rgba(26, 162, 96, 0.30), 0 4px 16px rgba(0, 0, 0, 0.35);
+            animation: pulse 1.8s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 3px rgba(26, 162, 96, 0.30), 0 4px 16px rgba(0, 0, 0, 0.35); }
+            50%      { box-shadow: 0 0 0 7px rgba(26, 162, 96, 0.10), 0 4px 16px rgba(0, 0, 0, 0.35); }
+        }
+        /* 拖动时关掉动画，避免抖动 */
+        #orb.dragging { animation: none; }
+    </style>
+</head>
+<body>
+    <div id="orb">🔍</div>
+    <script>
+        const orb = document.getElementById('orb');
+        let dragging = false, moved = false, downX = 0, downY = 0, lastX = 0, lastY = 0;
+
+        orb.addEventListener('mousedown', (e) => {
+            dragging = true; moved = false;
+            downX = e.screenX; downY = e.screenY;
+            lastX = e.screenX; lastY = e.screenY;
+            orb.classList.add('dragging');
+            window.api.ballDragStart();
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            const dx = e.screenX - lastX;
+            const dy = e.screenY - lastY;
+            lastX = e.screenX; lastY = e.screenY;
+            if (Math.abs(e.screenX - downX) + Math.abs(e.screenY - downY) > 4) moved = true;
+            window.api.ballDragMove(dx, dy);
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            orb.classList.remove('dragging');
+            window.api.ballDragEnd();
+            if (!moved) window.api.ballOpenPanel();   // 没拖动 = 单击 → 开面板
+        });
+
+        // 主进程推送放大镜开关状态，更新小球外观
+        window.api.onBallState((st) => {
+            if (st && st.magnifierOn) orb.classList.add('active');
+            else orb.classList.remove('active');
+        });
+    </script>
+</body>
+</html>

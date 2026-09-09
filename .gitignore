@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist_prev_015743/
+backup/
+
+# Compiled native binary (regenerate with `npm run build:ocr`)
+build/vision-ocr
+
+# Tesseract language data cache (auto-downloaded from CDN on first run)
+*.traineddata
+
+# Logs
+*.log
+error.log
+
+# Editor / OS junk
+.DS_Store
+*.bak
+
+# Dev scratch
+_check/
+scripts/_*
+scripts/_cert_tmp/
+
+# Env files (none currently, kept safe)
+.env
+.env.*

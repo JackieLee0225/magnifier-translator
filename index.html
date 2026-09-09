@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>放大镜翻译器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --accent: #0a84ff;
+            --text: #1d1d1f;
+            --sub: #6b6b70;
+            --card: rgba(255, 255, 255, 0.55);
+            --card-border: rgba(255, 255, 255, 0.7);
+        }
+
+        html, body {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: var(--text);
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 整个窗口可拖拽，按钮单独关掉拖拽 */
+        .titlebar {
+            -webkit-app-region: drag;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 8px;
+            border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
+        }
+        .titlebar .title { font-size: 14px; font-weight: 600; flex: 1; }
+        .icon-btn {
+            -webkit-app-region: no-drag;
+            width: 28px; height: 28px;
+            border: none; border-radius: 7px;
+            background: rgba(255,255,255,0.5);
+            color: var(--sub);
+            cursor: pointer; font-size: 15px;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s;
+        }
+        .icon-btn:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+
+        .body { padding: 12px; height: calc(100% - 44px); display: flex; flex-direction: column; gap: 10px; }
+
+        .actions { display: flex; gap: 8px; }
+        .btn-primary {
+            -webkit-app-region: no-drag;
+            flex: 1; padding: 9px;
+            border: none; border-radius: 10px;
+            background: var(--accent); color: #fff;
+            font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: filter 0.15s;
+        }
+        .btn-primary:hover { filter: brightness(1.08); }
+        .btn-primary:active { filter: brightness(0.92); }
+
+        .cards { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+        .card {
+            background: var(--card);
+            border: 0.5px solid var(--card-border);
+            border-radius: 14px;
+            padding: 12px;
+            display: flex; flex-direction: column;
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+            min-height: 0;
+            flex: 1;
+        }
+        .card-head {
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 8px;
+        }
+        .card-head .label { font-size: 12px; font-weight: 600; color: var(--sub); }
+        .badge {
+            font-size: 10px; padding: 1px 7px; border-radius: 10px;
+            background: rgba(10,132,255,0.15); color: var(--accent);
+        }
+        .copy-btn {
+            margin-left: auto;
+            border: 0.5px solid rgba(0,0,0,0.12);
+            background: rgba(255,255,255,0.6);
+            border-radius: 8px; padding: 3px 9px;
+            font-size: 11px; color: var(--sub); cursor: pointer;
+            transition: all 0.15s;
+        }
+        .copy-btn:hover { color: var(--text); background: #fff; }
+        .copy-btn.done { color: #1aa260; border-color: rgba(26,162,96,0.4); }
+
+        .content {
+            flex: 1; overflow-y: auto;
+            font-size: 15px; line-height: 1.55;
+            color: var(--text);
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .content.empty { color: var(--sub); font-size: 13px; }
+        .content.trans { font-size: 16px; }
+
+        /* 自定义滚动条 */
+        .content::-webkit-scrollbar { width: 5px; }
+        .content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 10px; }
+
+        .status {
+            font-size: 12px; color: var(--sub);
+            min-height: 18px; text-align: center;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .status.error { color: #d83933; }
+        .spinner {
+            width: 12px; height: 12px;
+            border: 2px solid rgba(0,0,0,0.15);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 设置面板（默认隐藏，从底部滑出） */
+        .settings {
+            position: absolute; inset: 44px 0 0 0;
+            background: rgba(245,245,247,0.92);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            padding: 18px;
+            display: none; flex-direction: column; gap: 14px;
+        }
+        .settings.show { display: flex; }
+        .settings h2 { font-size: 15px; margin-bottom: 2px; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: var(--sub); }
+        .field input, .field select {
+            padding: 9px 10px; border-radius: 9px;
+            border: 0.5px solid rgba(0,0,0,0.15);
+            background: #fff; font-size: 13px; color: var(--text);
+            outline: none;
+        }
+        .field input:focus, .field select:focus { border-color: var(--accent); }
+        .settings .row { display: flex; gap: 8px; margin-top: 4px; }
+        .settings .row .btn-primary { flex: 1; }
+        .settings .cancel {
+            flex: 1; padding: 9px; border-radius: 10px;
+            border: 0.5px solid rgba(0,0,0,0.15); background: #fff;
+            font-size: 14px; color: var(--sub); cursor: pointer;
+        }
+        .hint { font-size: 11px; color: var(--sub); line-height: 1.5; }
+        #testBtn {
+            flex: 1; padding: 9px; border-radius: 10px;
+            border: 0.5px solid rgba(0,0,0,0.15); background: #fff;
+            font-size: 14px; color: var(--text); cursor: pointer;
+        }
+        #testBtn:disabled { opacity: 0.5; cursor: default; }
+        .test-result {
+            font-size: 12px; line-height: 1.6; padding: 8px 10px;
+            border-radius: 9px; background: rgba(0,0,0,0.04);
+            color: var(--sub); display: none;
+        }
+        .test-result:not(:empty) { display: block; }
+        .test-result.ok { background: rgba(52,199,89,0.12); color: #1a7f37; }
+        .test-result.err { background: rgba(255,59,48,0.10); color: #c0341d; }
+    </style>
+</head>
+<body>
+    <div class="titlebar">
+        <span class="title">🔍 放大镜翻译器</span>
+        <button class="icon-btn" id="settingsBtn" title="设置">⚙</button>
+        <button class="icon-btn" id="hideBtn" title="隐藏">✕</button>
+    </div>
+
+    <div class="body">
+        <div class="actions">
+            <button class="btn-primary" id="selectBtn">📷 框选翻译</button>
+        </div>
+
+        <div class="cards">
+            <div class="card">
+                <div class="card-head">
+                    <span class="label">原文</span>
+                    <button class="copy-btn" id="copySrc" data-target="source">复制</button>
+                </div>
+                <div class="content empty" id="source">点击下方按钮框选屏幕文字</div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <span class="label">译文</span>
+                    <span class="badge" id="dirBadge" style="display:none;"></span>
+                    <button class="copy-btn" id="copyTr" data-target="translated">复制</button>
+                </div>
+                <div class="content trans empty" id="translated">—</div>
+            </div>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings" id="settingsPanel">
+        <h2>设置</h2>
+        <div class="field">
+            <label>DeepSeek API Key</label>
+            <input type="password" id="apiKey" placeholder="sk-... 留空则用免费接口" autocomplete="off">
+            <span class="hint">Key 会用系统级加密存到本地，不会明文落盘。可到 platform.deepseek.com 申请。</span>
+        </div>
+        <div class="field">
+            <label>翻译方向</label>
+            <select id="direction">
+                <option value="auto">自动判断</option>
+                <option value="zh2en">中 → 英</option>
+                <option value="en2zh">英 → 中</option>
+            </select>
+        </div>
+        <div class="row">
+            <button class="btn-primary" id="saveBtn">保存</button>
+            <button id="testBtn">测试</button>
+            <button class="cancel" id="cancelBtn">取消</button>
+        </div>
+        <div class="hint" id="settingsHint"></div>
+        <div class="test-result" id="testResult"></div>
+    </div>
+
+    <script>
+        // 注意：页面只通过 preload 暴露的 window.api 与主进程通信
+        const $ = (id) => document.getElementById(id);
+        const sourceEl = $('source');
+        const transEl = $('translated');
+        const statusEl = $('status');
+        const dirBadge = $('dirBadge');
+
+        let lastSource = '';
+        let lastTranslated = '';
+
+        /** 转义 HTML，防止 OCR 内容里的尖括号打乱布局 */
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function setText(el, text, isEmpty, emptyText) {
+            if (!text) {
+                el.textContent = emptyText || '—';
+                el.classList.add('empty');
+            } else {
+                el.textContent = text;
+                el.classList.remove('empty');
+            }
+        }
+
+        function showStatus(message, isError) {
+            statusEl.className = 'status' + (isError ? ' error' : '');
+            statusEl.innerHTML = message
+                ? `<span class="spinner"></span>${escapeHtml(message)}`
+                : '';
+            // 出错时不要转圈
+            if (isError) statusEl.innerHTML = escapeHtml(message);
+        }
+
+        // 隐藏窗口（✕ 不再 close，避免 App 残留）
+        $('hideBtn').addEventListener('click', () => window.api.hideWindow());
+
+        $('selectBtn').addEventListener('click', () => {
+            sourceEl.textContent = '请框选屏幕上的文字…';
+            sourceEl.classList.add('empty');
+            transEl.textContent = '—';
+            transEl.classList.add('empty');
+            dirBadge.style.display = 'none';
+            showStatus('请框选屏幕上的文字', false);
+            window.api.startSelection();
+        });
+
+        // 复制按钮
+        document.querySelectorAll('.copy-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const target = btn.dataset.target === 'source' ? lastSource : lastTranslated;
+                if (!target) return;
+                await window.api.copyText(target);
+                const old = btn.textContent;
+                btn.textContent = '已复制';
+                btn.classList.add('done');
+                setTimeout(() => { btn.textContent = old; btn.classList.remove('done'); }, 1200);
+            });
+        });
+
+        // 过程状态：正在截图 / 正在识别 / 正在翻译
+        window.api.onStatus(({ message }) => showStatus(message, false));
+
+        // 最终结果
+        window.api.onResult((payload) => {
+            if (!payload.ok) {
+                showStatus(payload.error || '出错了', true);
+                return;
+            }
+
+            lastSource = payload.source || '';
+            lastTranslated = payload.translated || '';
+
+            setText(sourceEl, lastSource, !lastSource, '未识别到文字');
+            setText(transEl, lastTranslated, !lastTranslated, '翻译未返回结果');
+
+            // 方向徽标：中→英 / 英→中
+            if (payload.direction) {
+                const arrow = payload.direction.from === 'zh' ? '中 → 英' : '英 → 中';
+                dirBadge.textContent = arrow;
+                dirBadge.style.display = 'inline-block';
+            }
+
+            // 状态栏显示引擎与翻译服务
+            const engine = payload.engine === 'vision' ? 'Vision OCR' : 'Tesseract';
+            const prov = payload.provider === 'deepseek' ? 'DeepSeek' : (payload.provider === 'free' ? '免费接口' : '');
+            const parts = [engine];
+            if (prov) parts.push(prov);
+            showStatus(parts.join(' · '), false);
+        });
+
+        // ---------------- 设置面板 ----------------
+        const panel = $('settingsPanel');
+        async function openSettings() {
+            const s = await window.api.getSettings();
+            $('apiKey').value = '';                 // 出于安全不回显明文
+            $('direction').value = s.direction || 'auto';
+            $('settingsHint').textContent = s.hasKey ? '已配置 API Key' : '未配置 Key，将使用免费接口';
+            $('testResult').textContent = '';
+            $('testResult').className = 'test-result';
+            panel.classList.add('show');
+        }
+        $('settingsBtn').addEventListener('click', openSettings);
+        // 托盘「⚙ 设置」直达：主进程发来 open-settings 时打开面板
+        window.api.onOpenSettings(openSettings);
+        $('cancelBtn').addEventListener('click', () => panel.classList.remove('show'));
+
+        $('saveBtn').addEventListener('click', async () => {
+            const key = $('apiKey').value.trim();
+            const direction = $('direction').value;
+            const patch = { direction };
+            if (key) patch.apiKey = key;            // 留空则不改已有 Key
+            await window.api.saveSettings(patch);
+            $('settingsHint').textContent = '已保存 ✓';
+            setTimeout(() => panel.classList.remove('show'), 600);
+        });
+
+        // 测试：用当前填写的 Key/方向做一次真实翻译，立刻验证质量
+        $('testBtn').addEventListener('click', async () => {
+            const key = $('apiKey').value.trim();
+            const direction = $('direction').value;
+            const btn = $('testBtn');
+            btn.disabled = true;
+            const r = $('testResult');
+            r.className = 'test-result';
+            r.textContent = '测试中…';
+            try {
+                const res = await window.api.testTranslate({ apiKey: key, direction });
+                if (res && res.ok) {
+                    r.className = 'test-result ok';
+                    const from = res.direction && res.direction.from === 'zh' ? '中' : (res.direction && res.direction.from === 'ja' ? '日' : '英');
+                    const to = res.direction && res.direction.to === 'zh' ? '中' : '英';
+                    const prov = res.provider === 'deepseek' ? 'DeepSeek' : '免费接口';
+                    r.innerHTML = '✓ ' + from + '→' + to + '（' + prov + '）<br>「' + escapeHtml(res.translated) + '」';
+                } else {
+                    r.className = 'test-result err';
+                    r.textContent = '✗ 测试失败：' + ((res && res.error) || '未知错误');
+                }
+            } catch (e) {
+                r.className = 'test-result err';
+                r.textContent = '✗ 测试失败：' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
