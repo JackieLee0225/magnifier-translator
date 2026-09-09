@@ -4,7 +4,7 @@
   "version": "1.3.3",
   "description": "macOS 屏幕取词翻译工具：框选 → OCR → AI 翻译",
   "main": "main.js",
-  "author": "Lee",
+  "author": "Jackie Lee",
   "license": "MIT",
   "scripts": {
     "start": "electron .",

@@ -258,7 +258,7 @@ OCR（Vision / Tesseract）都会返回每行文字的**像素坐标框**（`blo
 
 ## License
 
-[MIT](LICENSE) © 2026 Lee
+[MIT](LICENSE) © 2026 Jackie Lee
 
 ## 贡献
 
