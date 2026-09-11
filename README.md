@@ -10,6 +10,39 @@ macOS 屏幕取词翻译工具：**框选 → OCR → AI 翻译**，以及 **放
 
 ---
 
+## 项目状态 & 愿景（Project Status & Vision）
+
+> ⚠️ **这是一个尚未完成的项目，非常需要社区的帮助来一起把它完善！**
+> ⚠️ **This is an unfinished project — we warmly welcome the community to help build it out!**
+
+### 我想要做的东西 / What I'm trying to build
+
+我的目标是做一款 **MacBook 上的本地翻译放大镜应用**，体验对标 **iPhone 自带的「相机实时翻译」功能**：
+
+My goal is a **local translation-magnifier app for MacBook**, modeled after the iPhone's built-in **camera real-time translation**:
+
+- 用 **快捷键** 唤起一个**虚拟镜面（镜片）**，它悬浮在屏幕上、跟随光标；
+- 镜框范围内，**像 iPhone 翻译功能一样实时把看到的文字翻译成目标语言**，并覆盖显示在原文位置；
+- 全程**本地运行**（OCR 用 macOS 原生 Apple Vision，翻译可走本地或免费接口），不依赖特定云端服务。
+
+- Press a **hotkey** to summon a **virtual mirror (lens)** that floats on screen and follows the cursor;
+- Within the lens frame, **text is translated into your target language in real time and overlaid on the original**, just like the iPhone's camera translation;
+- Everything runs **locally** (OCR via macOS native Apple Vision; translation can use a local or free endpoint), with no hard dependency on any specific cloud service.
+
+### 现在已经有的 / What already exists
+
+当前 1.x 版本做了一版「框选翻译 + 放大镜覆盖模式」，但距离上面那个「像 iPhone 相机翻译一样的实时镜面」还有明显差距 —— 这正是需要大家一起补上的地方。
+
+The current 1.x release ships **select-to-translate + a magnifier overlay mode**, but it's still clearly far from the "real-time iPhone-style camera lens" vision above — and that gap is exactly what we need help closing.
+
+### 怎么帮忙 / How to help
+
+任何方向（实时镜面、翻译质量、性能、UI、文档）的 Issue 与 Pull Request 都欢迎。开发环境说明见下方「快速开始」与「贡献」两节。非常感谢！
+
+Issues and Pull Requests in any direction — real-time lens, translation quality, performance, UI, docs — are all welcome. See **快速开始 / Quick Start** and **贡献 / Contributing** below for the dev setup. Thank you!
+
+---
+
 ## 快速开始（开发模式）
 
 ```bash
